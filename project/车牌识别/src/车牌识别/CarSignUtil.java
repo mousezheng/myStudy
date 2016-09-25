@@ -21,6 +21,9 @@ public class CarSignUtil {
 	int[][] newGrayImageData;
 	BufferedImage buffImage;
 	BufferedImage dataImage;
+	int[][] licenseData = null;
+	int[][][] charImage = null; 
+	
 	
 	static Logger log = Logger.getLogger("随意打");
 
@@ -33,6 +36,8 @@ public class CarSignUtil {
 		
 		extractData();
 		blockImage();
+		charImage = data2Image();
+		
 	}
 
 	/**
@@ -220,26 +225,7 @@ public class CarSignUtil {
 		return Circle;
 	}
 
-	/**
-	 * 将二值图像转换为图片
-	 * 
-	 */
-	public BufferedImage getImage(int[][] matrix) {
 
-		BufferedImage image = new BufferedImage(matrix.length,
-				matrix[0].length, 5);
-
-		for (int i = 0; i < matrix.length; i++) {
-			for (int j = 0; j < matrix[0].length; j++) {
-				if (matrix[i][j] != 1)
-					image.setRGB(i, j, 0xff000000);
-				else
-					image.setRGB(i, j, 0xffffffff);
-			}
-		}
-
-		return image;
-	}
 
 	/**
 	 * 车牌信息提取，此处不考虑特殊情况 例如，提取出现的干扰，未能屏蔽
@@ -325,16 +311,21 @@ public class CarSignUtil {
 	}
 
 	/**
-	 * 主要针对蓝底黑字设计
+	 * 主要针对蓝底白字进行提取分析
 	 * @return
 	 */
-	public BufferedImage[] blockImage(){
-		BufferedImage[] licenseData = null;
+	public int[][] blockImage(){
+		
 		int[] writeColumns = new int[dataImage.getWidth()];
 		int[] blueColumns = new int[dataImage.getWidth()];
 		int[] writeLines = new int[dataImage.getHeight()];
 		int[] blueLines = new int[dataImage.getHeight()];
-		
+		int startLine = 0,endLine = 0;
+		int startColumns[] = new int[12];	//存放纵向扫的描结果，单个数据的开头
+		int endColumns[] = new int[12];		//存放横向扫描的结果，单个数据的结束
+		int start_end[] = new int[12];
+		int conut = 0,sum = 0;
+		int temp1 = 0,temp2 = 0;		
 		int r,g,b;
 		
 		for (int i = 0; i < dataImage.getWidth(); i++) {
@@ -344,11 +335,10 @@ public class CarSignUtil {
 				g = (data >> 8) & 0xff;
 				b = (data >> 0) & 0xff;
 				if (b > 150 & g < 160 & r < 50)		blueColumns[i]++;
-				if (b > 180 & g > 180 & r > 180)	blueColumns[i]++;
-				
+				if (b > 180 & g > 180 & r > 180)	writeColumns[i]++;
 				
 			}
-//			System.out.println(i + "  " + blueColumns[i] + " " + blueColumns[i]);
+//			System.out.println(i + "  " + blueColumns[i] + " " + writeColumns[i]);
 		}
 		
 		for (int j = 0; j < dataImage.getHeight(); j++) {
@@ -358,65 +348,200 @@ public class CarSignUtil {
 				g = (data >> 8) & 0xff;
 				b = (data >> 0) & 0xff;
 				if (b > 150 & g < 160 & r < 50)		blueLines[j]++;
-				if (b > 180 & g > 180 & r > 180)	writeLines[j]++;
+				if (b > 150 && g > 150 && r > 150)	writeLines[j]++;
 				
 				
 			}
-			System.out.println(j + "  " + blueLines[j] + " " + writeLines[j]);
+//			System.out.println(j + "  " + blueLines[j] + " " + writeLines[j]);
 		}
+		
+		boolean sign = true;
+		for (int i = 0; i < writeLines.length/2; i++) {
+			
+			if (writeLines[i] ==  0) {
+				sign = true;
+			}
+			
+			if (sign && writeLines[i] > 20 ) {
+					startLine = i;
+					sign = false;
+			}
+		}
+		
+		sign = true;
+		for (int i = writeLines.length-1; i > writeLines.length/2; i--) {
+			if (writeLines[i] ==  0) {
+				sign = true;
+			}
+			
+			if (sign && writeLines[i] > 20 ) {
+					endLine = i;
+					sign = false;
+			}
+		}
+		
+
+		for (int i = 1; i < writeColumns.length; i++) {
+			if (temp1>=11) {
+				System.err.println("字符提取数超出预期");
+				break;
+			}
+			if (writeColumns[i-1] <= 5 && writeColumns[i] > 5) 	startColumns[++temp1] = i;			
+			if (writeColumns[i-1] >= 5 && writeColumns[i] < 5)	endColumns[++temp2] = i;
+		}
+		
+		//初始化记录单个字符宽度的数组
+		for (int j = 0; j < start_end.length; j++) 
+			start_end[j] = endColumns[j] - startColumns[j];
+		
+		for (int i = 0; i < start_end.length; i++)
+			if (start_end[i] > 5) {
+				sum = sum + start_end[i];
+				conut++;
+			}
+		
+		sum = sum/conut;
+		conut = 0;
+		
+		for (int i = 0; i < start_end.length; i++) {
+			if (start_end[i] >= sum/2 && start_end[i] < sum*2) {
+				conut++;
+			}
+		}
+		int startChar[] = new int[conut];
+		int endChar[] = new int[conut];
+		conut = 0;
+		for (int i = 0; i < start_end.length; i++) {
+			if (start_end[i] >= sum/2 && start_end[i] < sum*2) {
+				startChar[conut] = startColumns[i];
+				endChar[conut] = endColumns[i];
+				conut++;
+				
+//				System.out.println(startColumns[i] + "  " + endColumns[i] + "  " + (startColumns[i]-endColumns[i]));
+			}
+		}
+		
+		licenseData = new int[conut][4];
+//		System.out.println(startLine + "  " + endLine);
+		for (int i = 0; i < conut; i++) {
+			licenseData[i][0] = startLine;
+			licenseData[i][1] = endLine;
+			licenseData[i][2] = startChar[i];
+			licenseData[i][3] = endChar[i];
+		}
+		
 		return licenseData;
 	}
 	
 	
+	public int[][][] data2Image(){
+		
+		int width = 0,highly = 0;
+		int r,g,b;
+		
+		if (licenseData.length  != 7) {
+			System.err.println("提取车牌信息有异常");
+			return null;
+		}
+		for (int i = 0; i < licenseData.length; i++) {
+			if (width < (licenseData[i][1]-licenseData[i][0])) 	
+				width = licenseData[i][1]-licenseData[i][0];
+			
+			if (highly < (licenseData[i][3]-licenseData[i][2])) 	
+				highly = licenseData[i][3]-licenseData[i][2];
+		}
+//		System.out.println(licenseData.length + "  "  + width + "  " + highly);
+		charImage = new int[licenseData.length][highly][width];
+		
+		for (int t = 0; t < licenseData.length; t++) {
+			for (int i = licenseData[t][0]; i < licenseData[t][1]; i++) {
+				for (int j = licenseData[t][2]; j < licenseData[t][3]; j++) {
+					int data = dataImage.getRGB(j,i);
+					r = (data >> 16) & 0xff;
+					g = (data >> 8) & 0xff;
+					b = (data >> 0) & 0xff;
+//					if (b > 150 && g < 160 && r < 50)		charImage[t][j-licenseData[t][2]][i-licenseData[t][0]] = 0;
+					if (b > 150 && g > 150 && r > 150)		charImage[t][j-licenseData[t][2]][i-licenseData[t][0]] = 1;
+				}
+			}
+		}
+		
+		return charImage;
+	}
+	
+/*
+ *	
+ *	//	左右扫描，排除简单的排除干扰点
+ *	private boolean scanning(int control, int i, int j, int direction) {
+ *		int conut = 0;
+ *
+ *		switch (direction) {
+ *		case 1:
+ *			for (int t = 0; t < control; t++) {
+ *				if (imgerode[i - t][j] == 0)
+ *					conut++;
+ *			}
+ *			if (conut > control / 2)
+ *				return true;
+ *			break;
+ *		case 2:
+ *			for (int t = 0; t < control; t++) {
+ *				if (imgerode[i + t][j] == 1)
+ *					conut++;
+ *			}
+ *			if (conut > control / 2)
+ *				return true;
+ *			break;
+ *		case 3:
+ *			for (int t = 0; t < control; t++) {
+ *				if (imgerode[i][j - t]  == 0)
+ *					conut++;
+ *			}
+ *			if (conut > control / 2)
+ *				return true;
+ *			break;
+ *		case 4:
+ *			for (int t = 0; t < control; t++) {
+ *				if (imgerode[i][j + t] == 1)
+ *					conut++;
+ *			}
+ *			if (conut > control / 2)
+ *				return true;
+ *			break;
+ *		default:
+ *			break;
+ *		}
+ *
+ *		return false;
+ *	}
+ *
+ */
+	
+	
+	
 	
 	/**
-	 * 左右扫描，排除简单的排除干扰点
+	 * 将二值图像转换为图片
 	 * 
-	 * @return
 	 */
-	private boolean scanning(int control, int i, int j, int direction) {
-		int conut = 0;
+	public BufferedImage getImage(int[][] matrix) {
 
-		switch (direction) {
-		case 1:
-			for (int t = 0; t < control; t++) {
-				if (imgerode[i - t][j] == 0)
-					conut++;
+		BufferedImage image = new BufferedImage(matrix.length,
+				matrix[0].length, 
+				BufferedImage.TYPE_INT_BGR);
+
+		for (int i = 0; i < matrix.length; i++) {
+			for (int j = 0; j < matrix[0].length; j++) {
+				if (matrix[i][j] != 1)
+					image.setRGB(i, j, 0xff000000);
+				else
+					image.setRGB(i, j, 0xffffffff);
 			}
-			if (conut > control / 2)
-				return true;
-			break;
-		case 2:
-			for (int t = 0; t < control; t++) {
-				if (imgerode[i + t][j] == 1)
-					conut++;
-			}
-			if (conut > control / 2)
-				return true;
-			break;
-		case 3:
-			for (int t = 0; t < control; t++) {
-				if (imgerode[i][j - t]  == 0)
-					conut++;
-			}
-			if (conut > control / 2)
-				return true;
-			break;
-		case 4:
-			for (int t = 0; t < control; t++) {
-				if (imgerode[i][j + t] == 1)
-					conut++;
-			}
-			if (conut > control / 2)
-				return true;
-			break;
-		default:
-			break;
 		}
+		System.out.println(matrix.length + "  " + matrix[0].length);
 
-		return false;
+		return image;
 	}
-
 	/**
 	 * 提取车牌信息 特殊色彩的提取方法，主要针对 黄色车牌和蓝色车牌的提取. 注意：黄色车子和蓝色车子可能会有干扰，
 	 * 
